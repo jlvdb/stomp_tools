@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+import argparse
+import os
+
+import stomp
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Create a rectangular STOMP map with right ascension and '
+                    'declination bounds.')
+    parser.add_argument(
+        '-b', '--bounds', nargs=4, type=float, required=True,
+        help='bounds of polygon in degrees: DEC_min DEC_max RA_min RA_max')
+    parser.add_argument(
+        '-r', '--resolution', type=int, default=int(2**14),
+        help='angular resolution of the polygon map, must be a power of base '
+             '2 between 2 and 32768 (default: %(default)s)')
+    parser.add_argument(
+        '-o', '--output', required=True, help='file path of output map')
+    args = parser.parse_args()
+
+    DECmin, DECmax, RAmin, RAmax = args.bounds
+    # check bounds
+    if not all(-90.0 <= dec <= 90.0 for dec in (DECmin, DECmax)):
+        parser.error("DEC_min and DEC_max must be between -90 and 90 degrees")
+    if not all(0.0 <= ra <= 360.0 for ra in (RAmin, RAmax)):
+        parser.error("RA_min and RA_max must be between 0 and 360 degrees")
+    if DECmax <= DECmin:
+        parser.error("DEC_min must be lower than DEC_max")
+    # check resolution
+    if args.resolution not in tuple(int(2**n) for n in range(1, 16)):
+        parser.error(
+            "resolution must be a power of base 2 between 2 and 32768")
+
+    # create tile map
+    print("create bounds with RA: %f-%f and DEC: %f-%f at resolution %d " % (
+        RAmin, RAmax, DECmin, DECmax, args.resolution))
+    tile_corners = stomp.LatLonBound(
+        DECmin, DECmax, RAmin, RAmax, stomp.AngularCoordinate.Equatorial)
+    tile_map = stomp.Map(tile_corners, 1.0, args.resolution, True)
+    # write result to disk
+    print("write output map to: %s" % args.output)
+    tile_map.Write(args.output)

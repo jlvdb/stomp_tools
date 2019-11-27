@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+import argparse
+import os
+
+import stomp
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Exclude the area of a set of STOMP map from a base map.')
+    parser.add_argument(
+        '-b', '--basemap', required=True,
+        help='file path of the base STOMP map of which the --input map '
+             'geometries are excluded')
+    parser.add_argument(
+        '-i', '--input', nargs='*', required=True,
+        help='file paths of input maps')
+    parser.add_argument(
+        '-o', '--output', required=True, help='file path of output map')
+    args = parser.parse_args()
+
+    base_map = args.basemap
+    exclude_maps = args.input
+    # check input files
+    if not os.path.exists(base_map):
+        raise OSError("Basemap file not found: " + base_map)
+    for fmap in exclude_maps:
+        if not os.path.exists(fmap):
+            raise OSError("Input file not found: " + fmap)
+
+    # exclude area from the base map
+    print("exclude area of %d map(s) from: %s" % (len(exclude_maps), base_map))
+    master_map = stomp.Map(base_map)
+    for fmap in exclude_maps:
+        master_map.ExcludeMap(stomp.Map(fmap))
+    # write result to disk
+    print("write output map to: %s" % args.output)
+    master_map.Write(args.output)

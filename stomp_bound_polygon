@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+import argparse
+import os
+
+import stomp
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Create a STOMP map from an arbitrary polygon shape. '
+                    'The corners must be added in clockwise order as seen '
+                    'from outside the celestial sphere.')
+    parser.add_argument(
+        '-b', '--bounds', nargs='*', required=True,
+        help='vector of (RA,DEC)-points that define the corners of the '
+             'polygon, format: "RA_1,DEC_1" "RA_2,DEC_2" ...')
+    parser.add_argument(
+        '-r', '--resolution', type=int, default=int(2**14),
+        help='angular resolution of the polygon map, must be a power of base '
+             '2 between 2 and 32768 (default: %(default)s)')
+    parser.add_argument(
+        '-o', '--output', required=True, help='file path of output map')
+    args = parser.parse_args()
+
+    try:
+        tile_bounds = [
+            tuple(float(s) for s in bound.split(",")) for bound in args.bounds]
+    except Exception:
+        raise parser.error("invalid input formation of bounds vector")
+    # check bounds
+    for bound_ra, bound_dec in tile_bounds:
+        if not(-90.0 <= bound_dec <= 90.0):
+            parser.error("DEC values must be between -90 and 90 degrees")
+        if not(0.0 <= bound_ra <= 360.0):
+            parser.error("RA values must be between 0 and 360 degrees")
+    # check resolution
+    if args.resolution not in tuple(int(2**n) for n in range(1, 16)):
+        parser.error(
+            "resolution must be a power of base 2 between 2 and 32768")
+
+    # create polygon bounds
+    print("create polygon bound with %d corner points at resolution %d " % (
+        len(tile_bounds), args.resolution))
+    tile_ang = stomp.AngularVector()
+    for bound_ra, bound_dec in tile_bounds:
+        bound_ang = stomp.AngularCoordinate(
+            bound_ra, bound_dec, stomp.AngularCoordinate.Equatorial)
+        tile_ang.push_back(bound_ang)
+
+    # create tile map
+    tile_corners = stomp.PolygonBound(tile_ang)
+    tile_map = stomp.Map(tile_corners, 1.0, args.resolution, True)
+    # write result to disk
+    print("write output map to: %s" % args.output)
+    tile_map.Write(args.output)

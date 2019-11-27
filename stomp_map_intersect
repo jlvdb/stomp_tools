@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+import argparse
+import os
+
+import stomp
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Intersect the geometry of a set of STOMP maps.')
+    parser.add_argument(
+        '-i', '--input', nargs='*', required=True,
+        help='file paths of input maps')
+    parser.add_argument(
+        '-o', '--output', required=True, help='file path of output map')
+    args = parser.parse_args()
+
+    intersect_maps = args.input
+    if len(intersect_maps) < 2:
+        parser.error('more than two STOMP maps are required for intersection')
+    # check input files
+    for fmap in intersect_maps:
+        if not os.path.exists(fmap):
+            raise OSError("Input file not found: " + fmap)
+
+    # intersect area of the maps
+    print("intersect %d maps" % len(intersect_maps))
+    # intersect the first map with all consecutive maps
+    master_map = stomp.Map(intersect_maps[0])
+    for fmap in intersect_maps[1:]:
+        master_map.IntersectMap(stomp.Map(fmap))
+    # write result to disk
+    print("write output map to: %s" % args.output)
+    master_map.Write(args.output)

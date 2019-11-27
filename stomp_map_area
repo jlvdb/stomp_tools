@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+import argparse
+import os
+
+import stomp
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Compute the area of a STOMP pixel map.')
+    parser.add_argument('stomp_map', help='file path of the STOMP map')
+    parser.add_argument(
+        '-v', '--verbose', action='store_true', help='be more verbose')
+    args = parser.parse_args()
+
+    map_path = args.stomp_map
+    # check input files
+    if not os.path.exists(map_path):
+        raise OSError("Input file not found: " + map_path)
+
+    # get the map area
+    if args.v:
+        print("load STOMP map: %s" % map_file)
+    stomp_map = stomp.Map(map_path)
+    area = stomp_map.Area()
+    if args.v:
+        print("Map area: %f sqdeg" % area)
+    else:
+        print("%f" % area)

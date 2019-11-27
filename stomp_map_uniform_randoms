@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+import argparse
+import multiprocessing
+import os
+from multiprocessing import cpu_count
+
+import numpy as np
+import pandas as pd
+import stomp
+from astropy.table import Table
+
+
+def generate_randoms(mask_path, n_randoms):
+    """
+    generate_randoms(mask_path, n_randoms)
+
+    Generate a sample of uniformly distributed objects on a STOMP mask.
+
+    Parameters
+    ----------
+    mask_path : str
+        File path of STOMP mask.
+    n_randoms : int
+        Number of random points to generate.
+
+    Returns
+    -------
+    area : pandas.DataFrame
+        Data frame with columns RA (right ascension, in degrees) and DEC
+        (declination, in degrees) of the random objects.
+    """
+    # use the stomp methods to generate uniform random points
+    stomp_map = stomp.Map(mask_path)
+    random_vector = stomp.AngularVector()
+    stomp_map.GenerateRandomPoints(random_vector, int(n_randoms))
+    # convert to numpy array
+    RA = np.asarray([rand.RA() for rand in random_vector.iterator()])
+    DEC = np.asarray([rand.DEC() for rand in random_vector.iterator()])
+    randoms = pd.DataFrame({"RA": RA, "DEC": DEC})
+    del stomp_map, random_vector
+    return randoms
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Generate a uniform random point catalogue on the '
+                    'geometry of a STOMP map. Random points will have right '
+                    'ascension / declination. Additional properties can be '
+                    'cloned from columns of an input data table.')
+    parser.add_argument(
+        '-s', '--stomp-map', required=True,
+        help='file path of a STOMP map that the defines the RA/DEC geometry')
+    parser.add_argument(
+        '-n', type=int, default=100000,
+        help='number of randoms to generate (default: %(default)s)')
+    parser.add_argument(
+        '--n-from-table', required=False,
+        help='file path to FITS data table which will be used to generate '
+             '--factor time data objects and optinally for cloning additional '
+             'data properties. Will overwrite -n')
+    parser.add_argument(
+        '--factor', type=float, default=10,
+        help='multiple of data objects (in --n-from-table) to generate as '
+             'random points (default: %(default)s, used only with '
+             '--n-from-table, otherwise -n)')
+    parser.add_argument(
+        '--clone-column', nargs='*', required=False,
+        help='column name(s) of properties to randomly clone from data '
+             'objects from data table given by --n-from-table')
+    parser.add_argument(
+        '-o', '--output', required=True,
+        help='file path of output randoms table')
+    parser.add_argument(
+        '--o-format', default="fits",
+        help='astropy.table format specifier of the output table '
+             '(default: %(default)s)')
+    parser.add_argument(
+        '--threads', type=int, default=cpu_count(),
+        help='number of threads to use (default: %(default)s)')
+    args = parser.parse_args()
+
+    map_path = args.stomp_map
+    # check input files
+    if not os.path.exists(map_path):
+        raise OSError("Input file not found: " + map_path)
+
+    clonedata = None
+    # check if the cloning table exists
+    if args.n_from_table is not None:
+        if not os.path.exists(args.n_from_table):
+            raise OSError("Input file not found: " + map_path)
+        d = Table.read(args.n_from_table)
+        N = len(d)
+        # draw n = factor * len(table) objects
+        setattr(args, "n", int(N * args.factor))
+        # collect the properties needed for cloning
+        if args.clone_column is not None:
+            clonedata = []
+            for col in args.clone_column:
+                clonedata.append(d[col])
+
+    # for each thread load an instance of the STOMP map and a data chunk
+    # STOMP masks cannot be pickled therefore not be shared between threads
+    message = "generating %d randoms on map footprint" % args.n
+    if args.threads == 1:
+        print(message)
+        pandas_table = generate_randoms(map_path, args.n)
+    else:  # use a multiprocessing pool for the random generation
+        print(message + " using %d threads" % args.threads)
+        # split the number of randoms to generate into roughly equal chunks
+        randoms_per_thread = np.diff(
+            np.linspace(0, args.n, args.threads + 1, dtype=int))
+        # launch a multiprocessing pool
+        thread_args = [[map_path] * args.threads, randoms_per_thread]
+        with multiprocessing.Pool(args.threads) as pool:
+            tables = pool.starmap(generate_randoms, zip(*thread_args))
+        # join the pandas.DataFrames
+        pandas_table = pd.concat(tables)
+
+    # optionally clone the values of the data column
+    if clonedata is not None:
+        idx_draw = np.random.choice(np.arange(N), args.n, replace=True)
+        for col, data in zip(args.clone_column, clonedata):
+            pandas_table[col] = data[idx_draw]
+
+    # write to specified output path
+    print("write table to: %s" % args.output)
+    table = Table.from_pandas(pandas_table)  # convert to astropy.table.Table
+    table.write(args.output, format=args.o_format, overwrite=True)
