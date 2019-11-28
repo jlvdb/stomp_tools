@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+import argparse
+import os
+
+import numpy as np
+import stomp
+import svgwrite
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Create a SVG image that represents a STOMP map in the '
+                    'internal coordinate system of STOMP')
+    parser.add_argument(
+        '-i', '--input', required=True, help='file paths of input map')
+    parser.add_argument(
+        '-r', '--resolution', type=int, default=0,
+        help='maximum pixel resolution displayed (impacts file size and SVG '
+            'viewer performance, default: based on pixels per map)')
+    parser.add_argument(
+        '-n', '--nregions', type=int, default=4,
+        help='number of STOMP map regions (default: %(default)s)')
+    parser.add_argument(
+        '-o', '--output', help='file path of output SVG (default: input.svg)')
+    args = parser.parse_args()
+
+
+    map_path = args.input
+    max_resolution = args.resolution
+    NREGIONS = args.nregions
+    # check input file
+    if not os.path.exists(map_path):
+        raise OSError("Input file not found: " + map_path)
+    # check resolution if given
+    if max_resolution > 0:
+        if max_resolution not in tuple(int(2**n) for n in range(1, 16)):
+            parser.error(
+                "resolution must be a power of base 2 between 2 and 32768")
+    # check nregions
+    if NREGIONS < 1:
+        parser.error("number of STOMP regions must be positive")
+
+    # load the map and convert to a pixel vector
+    print("loading input stomp map: %s" % map_path)
+    stomp_map = stomp.Map(map_path)
+    if not stomp_map.RegionsInitialized():
+        stomp_map.InitializeRegions(NREGIONS)
+    pixel_vector = stomp.PixelVector()
+    stomp.Map.Pixels(stomp_map, pixel_vector)
+
+    # determine max_resolution if not given
+    if max_resolution == 0:
+        # limit to displaying at most 100,000 pixels (limiting maximum resolution)
+        # create a histogram of pixel resolution
+        n_pix, log_res = np.histogram(
+            np.log2([pixel.Resolution() for pixel in pixel_vector]),
+            bins=np.arange(25))
+        # start at worst resolution and add the number of pixels up to the limit
+        total_pixels = 0
+        for n, res in zip(n_pix, log_res):
+            if total_pixels + n <= 100000:
+                total_pixels += n
+                # check if the maximum resolution contained in the map is reached
+                if n == 0 and total_pixels > 0:
+                    break
+                max_resolution = np.int64(2 ** res)  # set new maximum resolution
+            else:
+                break
+        print("limit automatically to resolution %d (maximum: %d)" % (
+            max_resolution, stomp_map.MaxResolution()))
+
+    # final image dimensions
+    scale = 100
+    # find map size
+    XMIN = np.min([pixel.LambdaMin() for pixel in pixel_vector])
+    XMAX = np.max([pixel.LambdaMax() for pixel in pixel_vector])
+    YMIN = np.min([pixel.EtaMin() for pixel in pixel_vector])
+    YMAX = np.max([pixel.EtaMax() for pixel in pixel_vector])
+    xsize = np.abs(XMIN - XMAX)
+    ysize = np.abs(YMIN - YMAX)
+    # convert to SVG image siye
+    swidth = 0.001 * min(xsize, ysize)
+    xsize = np.abs(XMIN - XMAX) + swidth
+    ysize = np.abs(YMIN - YMAX) + swidth
+
+    # create image
+    if args.output is None:
+        outputfile = os.path.splitext(args.input)[0] + ".svg"
+    else:
+        outputfile = args.output
+    dwg = svgwrite.Drawing(
+        outputfile, size=(xsize * scale, ysize * scale), profile='tiny')
+    # draw each stomp region in one separate SVG group
+    print("converting STOMP pixels to SVG polygons")
+    groups = [dwg.g() for i in range(NREGIONS)]
+    for pixel in pixel_vector:
+        if pixel.Resolution() <= max_resolution:
+            # read pixel data
+            xmin, xmax = pixel.LambdaMin(), pixel.LambdaMax()
+            ymin, ymax = pixel.EtaMin(), pixel.EtaMax()
+            center = stomp.CosmoCoordinate(
+                pixel.Lambda(), pixel.Eta(), 1, stomp.AngularCoordinate.Survey)
+            # find the correct STOMP region/SVG group of the current pixel
+            region = stomp_map.FindRegion(center)
+            if region < 0:
+                continue
+            else:
+                # convert pixel to rectangle
+                x = scale * (xmin - XMIN + swidth / 2.0)
+                y = scale * (ymin - YMIN + swidth / 2.0)
+                dx = scale * (xmax - xmin)
+                dy = scale * (ymax - ymin)
+                groups[region].add(dwg.rect(
+                    (xsize * scale - x - dx, y), (dx, dy),
+                    stroke=svgwrite.rgb(0, 0, 0, 'RGB'),
+                    fill=svgwrite.rgb(18, 104, 170, 'RGB'),
+                    stroke_width=swidth * scale))
+    # add groups to drawing
+    for group in groups:
+        dwg.add(group)
+    print("writing image file to: " + outputfile)
+    dwg.save()

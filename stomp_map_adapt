@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+import argparse
+import multiprocessing
+import os
+import subprocess
+import sys
+from multiprocessing import cpu_count
+
+import numpy as np
+import stomp
+from astropy.table import Table
+
+
+def adapt_mask(data):
+    # make the proper type cast for the C code
+    data_ra = np.array(data[args.ra], dtype=np.double)
+    data_dec = np.array(data[args.dec], dtype=np.double)
+    # create pixels for each object and convert them into a pixel map
+    pix_vect = stomp.PixelVector()
+    for RA, DEC in zip(data_ra, data_dec):
+        ang = stomp.AngularCoordinate(
+            RA, DEC, stomp.AngularCoordinate.Equatorial)
+        pix_vect.push_back(stomp.Pixel(ang, args.resolution, 1.0))
+    # create the final map
+    mask = stomp.Map()
+    mask.IngestMap(pix_vect)
+    return mask
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Create a STOMP pixel map from the object distribution in '
+                    'a FITS data table. This is a faster version of '
+                    'the_wizz/utility_programs/stomp_adapt_map.py')
+    parser.add_argument(
+        '-i', '--input', required=True, help='file path of input data table')
+    parser.add_argument(
+        '--i-format', default='fits',
+        help='astropy.table format specifier of table 2')
+    parser.add_argument(
+        '--ra', default='ALPHA_J2000',
+        help='name of the table column containing the right ascension '
+             '(default: %(default)s)')
+    parser.add_argument(
+        '--dec', default='DELTA_J2000',
+        help='name of the table column containing the declination '
+             '(default: %(default)s)')
+    parser.add_argument(
+        '-r', '--resolution', type=int, default=512,
+        help='angular resolution of the polygon map, must be a power of base '
+             '2 between 2 and 32768 (default: %(default)s)')
+    parser.add_argument(
+        '-o', '--output', required=True, help='file path of output map')
+    args = parser.parse_args()
+
+    # load the input data
+    if not os.path.exists(args.input):
+        sys.exit("ERROR: data table does not exist: %s" % args.input)
+    data = Table.read(args.input, format=args.i_format)
+    # check if the RA/DEC columns exist
+    if args.ra not in data.colnames:
+        sys.exit("ERROR: table does not contain column '%s'" % args.ra)
+    if args.dec not in data.colnames:
+        sys.exit("ERROR: table does not contain column '%s'" % args.dec)
+
+    ra_min = data[args.ra].min()
+    ra_max = data[args.ra].max()
+    dec_min = data[args.dec].min()
+    dec_max = data[args.dec].max()
+    # this may be useful for checks
+    latlon_bound = stomp.LatLonBound(
+        np.double(dec_min), np.double(dec_max),
+        np.double(ra_min), np.double(ra_max),
+        stomp.AngularCoordinate.Equatorial)
+    box_area = latlon_bound.Area()
+    print("data bounding box area: %.8f sqdeg" % box_area)
+
+    print("creating STOMP map")
+    mask = adapt_mask(data)
+    # print some statistics
+    mask_area = mask.Area()
+    print("final map area: %.8f sqdeg" % mask_area)
+    print("ratio to bounding box: %.8f" % (mask_area / box_area))
+    print("density: %.8f objects per pixel" % (len(data) / mask.Size()))
+
+    # write the output map
+    mask.Write(args.output)

@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+import argparse
+import os
+
+import stomp
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Remove regions from a STOMP map with sparse pixel '
+                    'coverage by comparing the orignal map a low resolution '
+                    'coverage map and rejecting pixels with low coverage.')
+    parser.add_argument(
+        '-i', '--input', required=True, help='file paths of input map')
+    parser.add_argument(
+        '-r', '--resolution', type=int, required=True,
+        help='resolution of the coverage map, must be larger then the input '
+             'map')
+    parser.add_argument(
+        '-t', '--threshold', type=float, default=0.2,
+        help='threshold of coverage fraction of the map against its low '
+            'resolution version, pixels within a low resolution pixel are '
+            'rejected if the area coverage fraction is below this threshold '
+            '(default: %(default)s)')
+    parser.add_argument(
+        '-o', '--output', required=True, help='file path of output map')
+    args = parser.parse_args()
+
+    map_path = args.input
+    coverage_resolution = args.resolution
+    coverage_threshold = args.threshold
+    # check input file
+    if not os.path.exists(map_path):
+        raise OSError("Input file not found: " + map_path)
+    # check resolution
+    if coverage_resolution not in tuple(int(2**n) for n in range(1, 16)):
+        parser.error(
+            "resolution must be a power of base 2 between 2 and 32768")
+    # check threshold
+    if not (0.0 <= coverage_threshold < 1.0):
+        parser.error("threshold must be between 0 and 1")
+    # check the coverage map resolution
+    print("load input stomp map: %s" % map_path)
+    stomp_map = stomp.Map(map_path)
+    if stomp_map.MaxResolution() <= args.resolution:
+        parser.error(
+            "resolution must be lower then input map resolution (r=%d)" %
+            stomp_map.MaxResolution())
+
+    ########################################
+    # Chris' code with some modifications #
+    ########################################
+
+    area_original = stomp_map.Area()
+    pix_vect = stomp.PixelVector()
+    # Compute a the coverage of this STOMP map by creating equal area pixels
+    # and compute the fraction of the pixel area that is covered by the pixel.
+    print("compute map coverage at resolution %d" % coverage_resolution)
+    stomp_map.Coverage(pix_vect, coverage_resolution, True)
+    covarge_map = stomp.Map(pix_vect)
+    # Now we loop through the pixel vector and keep pixels that cover a 
+    # sufficient fraction of the area.
+    print("reject pixels with coverage of less than %.2f%%" % (
+        coverage_threshold * 100.0))
+    cut_pix_vect = stomp.PixelVector()
+    for pix in pix_vect:
+        # This line cuts out the pixels that have only a fraction of their
+        # area active in the original map. For instance if pix.Weight() = 0.25
+        # that means that only 25% of the area for that pixel is "active."
+        # As another example, say you had a map with pixels at 1024 resolution.
+        # It takes 4 of those pixels to make a pixel at 512. If the 512 pixel
+        # has a Weight of 0.25, that means only one pixel out of the 4 that
+        # make up the 512 pixel is active.
+        if pix.Weight() >= coverage_threshold:
+            cut_pix_vect.push_back(pix)
+    # Create a new map from the cut pixels.
+    cut_map = stomp.Map(cut_pix_vect)
+    # Intersect this cut map with the origianl stomp_map and write out the
+    # results. Also write out the cut_map for checking.
+    outfile = os.path.join(args.output, os.path.basename(map_path))
+    print("write cleaned map to: %s" % args.output)
+    cut_map.Write(
+        "_coverage{:d}".format(coverage_resolution).join(
+            os.path.splitext(outfile)))
+    stomp_map.IntersectMap(cut_map)
+    area_new = stomp_map.Area()
+    print("initial map area: %f" % area_original)
+    print("dropped area:     %f" % (area_original - area_new))
+    print("remaining area:   %f" % area_new)
+    stomp_map.Write(args.output)
