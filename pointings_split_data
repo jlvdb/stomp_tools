@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+
+###############################################################################
+#                                                                             #
+#   Currently this script is BUGGED, but this does not affect the DIR test    #
+#   in any way. However it does affect the random generation for CC n(z).     #
+#   The script is supposed to create data tables that are actually masked     #
+#   to the pointing STOMP map, however the data catalogues are cut along      #
+#   RA/DEC which would be fine if STOMP maps would not rely on pixelisation.  #
+#                                                                             #
+###############################################################################
+
 import argparse
 import os
 import shutil
