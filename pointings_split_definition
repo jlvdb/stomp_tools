@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import sys
+
+
+parser = argparse.ArgumentParser(
+    description='Create a subset of the pointing defining file '
+                '(%s) according to RA/DEC bounds.' % os.path.join(
+                    "$PIPEDIR", "data", "KIDS_ra_dec_cuts_corr2.txt"))
+parser.add_argument(
+    '-i', '--input', help='path for input pointing definition file')
+parser.add_argument(
+    '--ra-min', type=float, default=0.0,
+    help='minimum RA of a pointing in degrees')
+parser.add_argument(
+    '--ra-max', type=float, default=360.0,
+    help='maximum RA of a pointing in degrees')
+parser.add_argument(
+    '--dec-min', type=float, default=-90.0,
+    help='minimum DEC of a pointing in degrees')
+parser.add_argument(
+    '--dec-max', type=float, default=90.0,
+    help='maximum DEC of a pointing in degrees')
+parser.add_argument(
+    '-o', '--output', help='path for output cropped pointing definition file')
+args = parser.parse_args()
+
+
+# check bounds
+if not all(-90.0 <= dec <= 90.0 for dec in (args.dec_min, args.dec_max)):
+    parser.error("--dec-min and --dec-max must be between -90 and 90 degrees")
+if not all(0.0 <= ra <= 360.0 for ra in (args.ra_min, args.ra_max)):
+    parser.error("--ra-min and --ra-max must be between 0 and 360 degrees")
+if args.dec_max <= args.dec_min:
+    parser.error("DEC_min must be lower than DEC_max")
+
+# check input presence
+if not os.path.exists(args.input):
+    sys.exit("ERROR: input file does not exist: %s" % args.input)
+
+# loop through the pointings and filter them
+print("select pointings within RA: %f-%f and DEC: %f-%f" % (
+    args.ra_min, args.ra_max, args.dec_min, args.dec_max))
+output_lines = []
+with open(args.input) as f:
+    for line in f.readlines():
+        # get the RA-DEC bounds
+        RAmin, RAmax, DECmin, DECmax = [
+            float(s) for s in line.strip().split()[1:]]
+        if not all(ra >= args.ra_min for ra in (RAmin, RAmax)):
+            continue
+        elif not all(ra <= args.ra_max for ra in (RAmin, RAmax)):
+            continue
+        elif not all(dec >= args.dec_min for dec in (DECmin, DECmax)):
+            continue
+        elif not all(dec <= args.dec_max for dec in (DECmin, DECmax)):
+            continue
+        else:
+            output_lines.append(line)
+
+# write remaining output
+print("write file to: %s" % args.output)
+with open(args.output, "w") as f:
+    for line in output_lines:
+        f.write(line)

@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import shutil
+import sys
+
+import numpy as np
+import stomp
+from astropy.io import fits as pyfits
+
+
+def create_folder_tree(path):
+    """
+    creates a folder tree recuresively, if it does not exist
+    ARGS: path: tree to crate
+    """
+    subpaths = []
+    # split path into its layers
+    while os.path.basename(path) != '':
+        subpaths.append(path)
+        path = os.path.dirname(path)
+    # create every folder in the tree which does not exist
+    for subpath in reversed(subpaths):
+        if not os.path.exists(subpath):
+            os.mkdir(subpath)
+
+
+parser = argparse.ArgumentParser(
+    description='Create STOMP maps for the pointings defined in a pointing '
+                'file and mask the data catalogues accordingly.')
+parser.add_argument(
+    'output', metavar='OUTPUT', help='folder where data products are stored')
+parser.add_argument(
+    '--pointing-file', metavar='FILE', required=True,
+    help='file like %s which defines pointing RA-DEC bounds' % os.path.join(
+        "$PIPEDIR", "data", "KIDS_ra_dec_cuts_corr2.txt"))
+parser.add_argument(
+    '--ref-file', metavar='FILE', required=True,
+    help='spectroscopic catalogue file path')
+parser.add_argument(
+    '--test-file', metavar='FILE', required=True,
+    help='photometric catalogue file path')
+parser.add_argument(
+    '--area-threshold', metavar='FLOAT', type=float, default=0.15,
+    help='area fraction covered by pointing below which data is rejected')
+parser.add_argument(
+    '--ref-count', metavar='INT', type=int, default=0.30,
+    help='minimum number of sources in reference sample per pointing, '
+         'otherwise the pointing is rejected')
+parser.add_argument(
+    '--ra', required=True, help='fits column name of RA')
+parser.add_argument(
+    '--dec', required=True, help='fits column name of DEC')
+parser.add_argument(
+    '--map-file', metavar='FILE', required=True, help='stomp map file path')
+args = parser.parse_args()
+
+
+def create_ra_dec_table(fitsobj, RAmin, RAmax, DECmin, DECmax, outputfile):
+    # mask the survey data to pointing RA-DEC bounds
+    data = fitsobj[1].data
+    bound_mask = (
+        (data[args.ra] >= float(RAmin)) &
+        (data[args.ra] <= float(RAmax)) &
+        (data[args.dec] >= float(DECmin)) &
+        (data[args.dec] <= float(DECmax)))
+    assert(np.count_nonzero(bound_mask) > args.ref_count)
+    # create a new FITS hdu object and write it
+    hdu = pyfits.BinTableHDU(header=fitsobj[1].header, data=data[bound_mask])
+    hdu.writeto(outputfile)
+
+
+# create output folder
+if os.path.exists(args.output):
+    shutil.rmtree(args.output)
+create_folder_tree(args.output)
+
+# load the data files
+print("==> load input data")
+# read the pointing defining file
+print("load pointing file: %s" % args.pointing_file)
+pointings = []
+with open(args.pointing_file) as f:
+    for n, rawline in enumerate(f, 1):
+        try:
+            assert(len(rawline.strip()) > 0)
+            # get the RA-DEC bounds
+            line = rawline.strip()
+            pname, ra_decs = line.split(None, 1)
+            RAmin, RAmax, DECmin, DECmax = [float(s) for s in ra_decs.split()]
+            pointings.append((pname, RAmin, RAmax, DECmin, DECmax))
+        except AssertionError:
+            continue
+        except (ValueError, IndexError):
+            sys.exit(
+                ("ERROR: invalid format in line %d, " % n) +
+                "expected: name, RAmin, RAmax, DECmin, DECmax")
+# load the master stomp map
+print("load STOMP map: %s" % args.map_file)
+stomp_map = stomp.Map(args.map_file)
+# load the FITS catalogues
+data = {}
+try:
+    print("load spectroscopic catalogue: %s" % args.ref_file)
+    data["spec"] = pyfits.open(args.ref_file, memmap=False)
+    print("load photometric catalogue: %s" % args.test_file)
+    data["phot"] = pyfits.open(args.test_file, memmap=False)
+
+    # iterate through the points listed in the file
+    print("\n==> iterate pointings to find overlap with: %s\n" % args.map_file)
+    for n, (pname, RAmin, RAmax, DECmin, DECmax) in enumerate(pointings, 1):
+        print(
+            "==> process pointing %s (%4d / %4d)" % (
+                pname, n, len(pointings)))
+        # create a STOMP RA-DEC bound
+        tile_corners = stomp.LatLonBound(
+            float(DECmin), float(DECmax), float(RAmin), float(RAmax),
+            stomp.AngularCoordinate.Equatorial)
+        # convert the bound to map
+        tile_map = stomp.Map(tile_corners, 1.0, int(2**14), True)
+        pointing_area = tile_map.Area()  # store initial area
+        # test whether the pointing overlaps with the stomp map
+        is_overlapping = tile_map.IntersectMap(stomp_map)
+        if not is_overlapping:
+            print("pointing rejected: no spatial overlap")
+        else:
+            # check whether the overlap area is large enough
+            overlap_area = tile_map.Area()
+            if (overlap_area / pointing_area) > args.area_threshold:
+                # if there is sufficient overlap, remove the area of the
+                # pointing from the master stomp map, mask data catalogues to
+                # the RA-DEC bounds and store in a subfolder of args.output
+                print("found %f deg^2 overlap" % tile_map.Area())
+                # create the output subfolder
+                outputfolder = os.path.join(args.output, pname)
+                os.mkdir(outputfolder)
+                print("write stomp map for pointing")
+                tile_map.Write(
+                    os.path.join(outputfolder, "pointing_stomp.map"))
+                # mask the data tables and write them to disk
+                print("write data catalogues masked to pointing bounds")
+                try:
+                    create_ra_dec_table(
+                        data["spec"], RAmin, RAmax, DECmin, DECmax,
+                        os.path.join(outputfolder, "pointing_spec.cat"))
+                    create_ra_dec_table(
+                        data["phot"], RAmin, RAmax, DECmin, DECmax,
+                        os.path.join(outputfolder, "pointing_phot.cat"))
+                except AssertionError:
+                    print("pointing rejected: number of objects too low")
+                    shutil.rmtree(outputfolder)
+                else:
+                    # remove pointing area from survey
+                    stomp_map.ExcludeMap(tile_map)
+                    print("remaining survey area: %f deg^2" % stomp_map.Area())
+            else:
+                print("pointing rejected: insufficient spatial overlap")
+        print("")
+
+    # write a map with the remaining map area
+    print("==> measure and write residual area of input stomp map")
+    print("residual area: %f deg^2" % stomp_map.Area())
+    stomp_map.Write(os.path.join(args.output, "remainder.map"))
+    print("")
+
+# close the fits tables if possible
+finally:
+    for fits in data.values():
+        try:
+            fits.close()
+        except Exception:
+            continue
