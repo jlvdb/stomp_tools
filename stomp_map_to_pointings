@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import shutil
+import sys
+
+import numpy as np
+import stomp
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        description='Split a survey STOMP map into pointing STOMP maps '
+                    'defined by RA/DEC cuts.')
+    parser.add_argument(
+        '-i', '--input', required=True,
+        help='survey STOMP map representing the full data geometry')
+    parser.add_argument(
+        '-p', '--pointings-file', required=True,
+        help='file that provides pointing RA-DEC bounds in 5 columns: '
+             'pointing name, RAmin, RAmax, DECmin, DECmax')
+    parser.add_argument(
+        '-r', '--resolution', type=int, default=int(2**14),
+        help='angular resolution of the polygon map (default: %(default)s), '
+             'must be a power of base 2 between 2 and 32768')
+    parser.add_argument(
+        '--coverage', type=float,
+        help='fraction of the area of the pointing covered by the survey map '
+             'below which the pointing is rejected (default: do not reject)')
+    parser.add_argument(
+        '-o', 'output', required=True,
+        help='folder where the pointing STOMP maps are stored '
+             '(WARNING: existing contents will be erased!)')
+    args = parser.parse_args()
+
+    # create output folder
+    if os.path.exists(args.output):
+        shutil.rmtree(args.output)
+    os.mkdir(args.output)
+
+    # read the pointing defining file
+    print("loading pointing file: %s" % args.pointing_file)
+    pointings = []
+    with open(args.pointing_file) as f:
+        for n, rawline in enumerate(f, 1):
+            if len(rawline.strip()) == 0:
+                continue
+            try:
+                # get the RA-DEC bounds
+                line = rawline.strip()
+                pname, ra_decs = line.split(None, 1)
+                RAmin, RAmax, DECmin, DECmax = [
+                    float(s) for s in ra_decs.split()]
+                pointings.append((pname, RAmin, RAmax, DECmin, DECmax))
+            except (ValueError, IndexError):
+                sys.exit(
+                    ("ERROR: invalid format in line %d, " % n) +
+                    "expected: name, RAmin, RAmax, DECmin, DECmax")
+    # load the master stomp map
+    print("loading STOMP map: %s" % args.map_file)
+    stomp_map = stomp.Map(args.map_file)
+
+    # iterate through the pointings and check if it has enough overlap with
+    # the master stomp_map
+    print("iterating pointings")
+    pointing_maps = {}
+    for n, pointing in enumerate(pointings, 1):
+        pname, RAmin, RAmax, DECmin, DECmax = pointing
+        # create a STOMP RA-DEC bound
+        pointing_corners = stomp.LatLonBound(
+            float(DECmin), float(DECmax), float(RAmin), float(RAmax),
+            stomp.AngularCoordinate.Equatorial)
+        # convert the bound to map
+        pointing_map = stomp.Map(pointing_corners, 1.0, args.resolution, True)
+        pointing_area = pointing_map.Area()  # store pixelized area
+        # test whether the pointing overlaps with the stomp map
+        is_overlapping = pointing_map.IntersectMap(stomp_map)
+        if not is_overlapping:
+            print("WARNING: pointing %s rejected: no spatial overlap" % pname)
+            continue
+        # check whether the overlap area is large enough
+        overlap_area = pointing_map.Area()
+        if args.coverage is not None:
+            if (overlap_area / pointing_area) < args.coverage:
+                print(
+                    "WARNING: pointing %s rejected: insufficient overlap" %
+                    pname)
+                continue
+        # if there is sufficient overlap, remove the area of the
+        # pointing from the master stomp map
+        print("pointing %s with %f deg^2 overlap" % overlap_area)
+        # remove pointing from survey map to avoid overlaps between
+        # neighbouring pointings
+        stomp_map.ExcludeMap(pointing_map)
+        mappath = os.path.join(args.output, "%s.map" % pname)
+        pointing_maps[mappath] = pointing_map
+
+    # report the remainder that was not covered by any of the pointings
+    print(
+        "remainding uncoverd survey area: %f deg^2" %
+        stomp_map.Area())
+    mappath = os.path.join(args.output, "remainder.map")
+    print("write remainder map to: %s" % mappath)
+    stomp_map.Write(mappath)
+
+    # write out the pointing maps
+    print("write pointing maps to: %s" % args.output)
+    for mappath, pointing_map in pointing_maps.items():
+        pointing_map.Write(mappath)
