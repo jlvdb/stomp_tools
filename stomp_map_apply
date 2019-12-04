@@ -8,7 +8,7 @@ from multiprocessing import cpu_count
 import numpy as np
 import stomp
 
-from tools import load_table
+from table_tools import load_table
 
 
 if __name__ == "__main__":
