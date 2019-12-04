@@ -10,21 +10,7 @@ import numpy as np
 import stomp
 from astropy.table import Table
 
-
-def adapt_mask(data):
-    # make the proper type cast for the C code
-    data_ra = np.array(data[args.ra], dtype=np.double)
-    data_dec = np.array(data[args.dec], dtype=np.double)
-    # create pixels for each object and convert them into a pixel map
-    pix_vect = stomp.PixelVector()
-    for RA, DEC in zip(data_ra, data_dec):
-        ang = stomp.AngularCoordinate(
-            RA, DEC, stomp.AngularCoordinate.Equatorial)
-        pix_vect.push_back(stomp.Pixel(ang, args.resolution, 1.0))
-    # create the final map
-    mask = stomp.Map()
-    mask.IngestMap(pix_vect)
-    return mask
+from tools import adapt_mask
 
 
 if __name__ == "__main__":
