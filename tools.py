@@ -138,3 +138,22 @@ def apply_mask(dtable):
             1.0, stomp.AngularCoordinate.Equatorial)
         mask[i] = smap.Contains(new_obj)
     return mask
+
+
+@contextmanager
+def stdout_redirected(dst=os.devnull):
+
+    term = sys.stdout.fileno()
+
+    def redirect(dst):
+        sys.stdout.close()
+        os.dup2(dst.fileno(), term)  # redirects non-python output
+        sys.stdout = os.fdopen(term, 'w')  # keep python on stdout
+
+    with os.fdopen(os.dup(term), 'w') as term_restore:
+        with open(dst, 'w') as file:
+            redirect(file)
+        try:
+            yield
+        finally:  # restore
+            redirect(term_restore)
