@@ -11,7 +11,7 @@ if __name__ == "__main__":
                     'declination bounds.')
     parser.add_argument(
         '-b', '--bounds', nargs=4, type=float, required=True,
-        help='bounds of polygon in degrees: DEC_min DEC_max RA_min RA_max')
+        help='bounds of polygon in degrees: RA_min RA_max DEC_min DEC_max')
     parser.add_argument(
         '-r', '--resolution', type=int, default=int(2**14),
         help='angular resolution of the polygon map, must be a power of base '
@@ -20,7 +20,7 @@ if __name__ == "__main__":
         '-o', '--output', required=True, help='file path of output map')
     args = parser.parse_args()
 
-    DECmin, DECmax, RAmin, RAmax = args.bounds
+    RAmin, RAmax, DECmin, DECmax = args.bounds
     # check bounds
     if not all(-90.0 <= dec <= 90.0 for dec in (DECmin, DECmax)):
         parser.error("DEC_min and DEC_max must be between -90 and 90 degrees")
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     # create tile map
     print("create bounds with RA: %f-%f and DEC: %f-%f at resolution %d " % (
         RAmin, RAmax, DECmin, DECmax, args.resolution))
-    tile_corners = stomp.LatLonBound(
+    tile_corners = stomp.LatLonBound(  # STOMP has RA and DEC reversed
         DECmin, DECmax, RAmin, RAmax, stomp.AngularCoordinate.Equatorial)
     tile_map = stomp.Map(tile_corners, 1.0, args.resolution, True)
     # write result to disk
