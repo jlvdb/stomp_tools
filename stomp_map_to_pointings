@@ -65,14 +65,15 @@ if __name__ == "__main__":
 
     # iterate through the pointings and check if it has enough overlap with
     # the master stomp_map
-    print("iterating pointings")
+    print("iterating pointings, writing pointing maps to: %s" % args.output)
     pointing_maps = {}
     for n, pointing in enumerate(pointings, 1):
         pname, RAmin, RAmax, DECmin, DECmax = pointing
         with stdout_redirected():
             # create a STOMP RA-DEC bound
             pointing_corners = stomp.LatLonBound(
-                float(DECmin), float(DECmax), float(RAmin), float(RAmax),
+                np.double(DECmin), np.double(DECmax),
+                np.double(RAmin), np.double(RAmax),
                 stomp.AngularCoordinate.Equatorial)
             # convert the bound to map
             pointing_map = stomp.Map(
@@ -93,22 +94,19 @@ if __name__ == "__main__":
                 continue
         # if there is sufficient overlap, remove the area of the
         # pointing from the master stomp map
-        print("pointing %s with %f deg^2 overlap" % (pname, overlap_area))
+        print("pointing %s with %.6f deg^2 overlap" % (pname, overlap_area))
+        # write the pointing map immediately because the following operations
+        # will modify it
+        mappath = os.path.join(args.output, "%s.map" % pname)
+        pointing_map.Write(mappath)
         # remove pointing from survey map to avoid overlaps between
         # neighbouring pointings
         stomp_map.ExcludeMap(pointing_map)
-        mappath = os.path.join(args.output, "%s.map" % pname)
-        pointing_maps[mappath] = pointing_map
 
     # report the remainder that was not covered by any of the pointings
     print(
-        "remainding uncoverd survey area: %f deg^2" %
+        "remainding uncoverd survey area: %.6f deg^2" %
         stomp_map.Area())
     mappath = os.path.join(args.output, "remainder.map")
     print("write remainder map to: %s" % mappath)
     stomp_map.Write(mappath)
-
-    # write out the pointing maps
-    print("write pointing maps to: %s" % args.output)
-    for mappath, pointing_map in pointing_maps.items():
-        pointing_map.Write(mappath)
