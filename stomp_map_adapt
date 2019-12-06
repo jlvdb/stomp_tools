@@ -62,7 +62,7 @@ if __name__ == "__main__":
     print("data bounding box area: %.8f sqdeg" % box_area)
 
     print("creating STOMP map")
-    mask = adapt_mask(data)
+    mask = adapt_mask(data[args.ra], data[args.dec], args.resolution)
     # print some statistics
     mask_area = mask.Area()
     print("final map area: %.8f sqdeg" % mask_area)

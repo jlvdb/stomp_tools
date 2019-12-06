@@ -7,6 +7,8 @@ import sys
 import numpy as np
 import stomp
 
+from tools import stdout_redirected
+
 
 if __name__ == "__main__":
 
@@ -22,14 +24,14 @@ if __name__ == "__main__":
              'pointing name, RAmin, RAmax, DECmin, DECmax')
     parser.add_argument(
         '-r', '--resolution', type=int, default=int(2**14),
-        help='angular resolution of the polygon map (default: %(default)s), '
+        help='angular resolution of the pointing maps (default: %(default)s), '
              'must be a power of base 2 between 2 and 32768')
     parser.add_argument(
         '--coverage', type=float,
         help='fraction of the area of the pointing covered by the survey map '
-             'below which the pointing is rejected (default: do not reject)')
+             'below which the pointing is rejected (default: no rejection)')
     parser.add_argument(
-        '-o', 'output', required=True,
+        '-o', '--output', required=True,
         help='folder where the pointing STOMP maps are stored '
              '(WARNING: existing contents will be erased!)')
     args = parser.parse_args()
@@ -40,9 +42,9 @@ if __name__ == "__main__":
     os.mkdir(args.output)
 
     # read the pointing defining file
-    print("loading pointing file: %s" % args.pointing_file)
+    print("loading pointing file: %s" % args.pointings_file)
     pointings = []
-    with open(args.pointing_file) as f:
+    with open(args.pointings_file) as f:
         for n, rawline in enumerate(f, 1):
             if len(rawline.strip()) == 0:
                 continue
@@ -58,8 +60,8 @@ if __name__ == "__main__":
                     ("ERROR: invalid format in line %d, " % n) +
                     "expected: name, RAmin, RAmax, DECmin, DECmax")
     # load the master stomp map
-    print("loading STOMP map: %s" % args.map_file)
-    stomp_map = stomp.Map(args.map_file)
+    print("loading STOMP map: %s" % args.input)
+    stomp_map = stomp.Map(args.input)
 
     # iterate through the pointings and check if it has enough overlap with
     # the master stomp_map
@@ -67,12 +69,14 @@ if __name__ == "__main__":
     pointing_maps = {}
     for n, pointing in enumerate(pointings, 1):
         pname, RAmin, RAmax, DECmin, DECmax = pointing
-        # create a STOMP RA-DEC bound
-        pointing_corners = stomp.LatLonBound(
-            float(DECmin), float(DECmax), float(RAmin), float(RAmax),
-            stomp.AngularCoordinate.Equatorial)
-        # convert the bound to map
-        pointing_map = stomp.Map(pointing_corners, 1.0, args.resolution, True)
+        with stdout_redirected():
+            # create a STOMP RA-DEC bound
+            pointing_corners = stomp.LatLonBound(
+                float(DECmin), float(DECmax), float(RAmin), float(RAmax),
+                stomp.AngularCoordinate.Equatorial)
+            # convert the bound to map
+            pointing_map = stomp.Map(
+                pointing_corners, 1.0, args.resolution, True)
         pointing_area = pointing_map.Area()  # store pixelized area
         # test whether the pointing overlaps with the stomp map
         is_overlapping = pointing_map.IntersectMap(stomp_map)
@@ -89,7 +93,7 @@ if __name__ == "__main__":
                 continue
         # if there is sufficient overlap, remove the area of the
         # pointing from the master stomp map
-        print("pointing %s with %f deg^2 overlap" % overlap_area)
+        print("pointing %s with %f deg^2 overlap" % (pname, overlap_area))
         # remove pointing from survey map to avoid overlaps between
         # neighbouring pointings
         stomp_map.ExcludeMap(pointing_map)

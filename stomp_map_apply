@@ -9,6 +9,7 @@ import numpy as np
 import stomp
 
 from table_tools import load_table
+from tools import apply_mask
 
 
 if __name__ == "__main__":
@@ -42,29 +43,34 @@ if __name__ == "__main__":
         help='number of threads to use (default: %(default)s)')
     args = parser.parse_args()
 
+    # normalize the number of threads
+    setattr(args, "threads", min(max(args.threads, 1), cpu_count()))
+
+    # load and check the input data table
     table = load_table(args.input, args.i_format, [args.ra, args.dec])
-    # load stomp map
-    map_file = args.stomp_map  # used globally in apply_mask()
-    if not os.path.exists(map_file):
-        sys.exit("ERROR: input file not found: " + map_file)
-    print("load STOMP map: %s" % map_file)
+
+    # check if the input stomp map exists, the file is actually loaded in
+    # apply_mask() by each thread
+    if not os.path.exists(args.stomp_map):
+        sys.exit("ERROR: input STOMP map not found: " + args.stomp_map)
+    print("load STOMP map: %s" % args.stomp_map)
 
     # for each thread load an instance of the STOMP map and a data chunk
     # STOMP masks cannot be pickled therefore not be shared between threads
     message = "mask data to map footprint"
     if args.threads == 1:  # don't use multiprocessing in this case
         print(message)
-        mask = apply_mask(table)
+        mask = apply_mask(table[args.ra], table[args.dec], args.stomp_map)
     else:  # use a multiprocessing pool for the masking
         print(message + " using %d threads" % args.threads)
         # split the table into roughly equal chunks
-        table_slices = []
-        step = int(len(table) / args.threads) + 1
-        for n in range(args.threads):
-            table_slices.append(table[n * step:(n + 1) * step])
+        ra_slices = np.array_split(table[args.ra], args.threads)
+        dec_slices = np.array_split(table[args.dec], args.threads)
+        map_paths = [args.stomp_map] * args.threads
         # create a parallel pool
         with multiprocessing.Pool(args.threads) as pool:
-            mask_chunks = pool.map(apply_mask, table_slices)
+            mask_chunks = pool.starmap(
+                apply_mask, zip(ra_slices, dec_slices, map_paths))
         mask = np.concatenate(mask_chunks)  # join the masks
 
     print("kept: %i of %i" % (np.count_nonzero(mask), len(table)))

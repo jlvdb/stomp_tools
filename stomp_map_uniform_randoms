@@ -50,6 +50,9 @@ if __name__ == "__main__":
         help='number of threads to use (default: %(default)s)')
     args = parser.parse_args()
 
+    # normalize the number of threads
+    setattr(args, "threads", min(max(args.threads, 1), cpu_count()))
+
     map_path = args.stomp_map
     # check input files
     if not os.path.exists(map_path):
