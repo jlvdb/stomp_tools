@@ -1,3 +1,7 @@
+import os
+import sys
+from contextlib import contextmanager
+
 import numpy as np
 import pandas as pd
 import stomp
@@ -5,8 +9,6 @@ import stomp
 
 def measure_region_area(mask_path, n_regions, region_idx):
     """
-    measure_region_area(mask_path, n_regions, region_idx)
-
     Measure the area of the i-th region of a given STOMP mask.
 
     Parameters
@@ -36,8 +38,6 @@ def measure_region_area(mask_path, n_regions, region_idx):
 
 def regionize_data(mask_path, n_regions, data):
     """
-    regionize_data(mask_path, n_regions, data)
-
     Assign data objects to the regions of a given STOMP mask based on their
     right ascension / declination.
 
@@ -83,8 +83,6 @@ def regionize_data(mask_path, n_regions, data):
 
 def generate_randoms(mask_path, n_randoms):
     """
-    generate_randoms(mask_path, n_randoms)
-
     Generate a sample of uniformly distributed objects on a STOMP mask.
 
     Parameters
@@ -112,36 +110,90 @@ def generate_randoms(mask_path, n_randoms):
     return randoms
 
 
-def adapt_mask(data):
-    # make the proper type cast for the C code
-    data_ra = np.array(data[args.ra], dtype=np.double)
-    data_dec = np.array(data[args.dec], dtype=np.double)
+def adapt_mask(RA, DEC, resolution):
+    """
+    Adapt a STOMP pixel mask from a vector of right ascensions and declinations
+    at a given mask resolution. Creates new pixel for each position until
+    all objects are covered.
+
+    Parameters
+    ----------
+    RA : array_like
+        List of right ascensions in degrees.
+    DEC : array_like
+        List of declinations in degrees.
+    resolution : int
+        Mask resolution (powers of 2 between 2 and 32768).
+
+    Returns
+    -------
+    mask : stomp.Map
+        STOMP pixel mask derived from the input data geometry.
+    """
+    assert(len(RA) == len(DEC))
     # create pixels for each object and convert them into a pixel map
     pix_vect = stomp.PixelVector()
-    for RA, DEC in zip(data_ra, data_dec):
+    iterator = zip(
+        np.asarray(RA, dtype=np.double),
+        np.asarray(DEC, dtype=np.double))
+    for RA, DEC in iterator:
         ang = stomp.AngularCoordinate(
             RA, DEC, stomp.AngularCoordinate.Equatorial)
-        pix_vect.push_back(stomp.Pixel(ang, args.resolution, 1.0))
+        pix_vect.push_back(stomp.Pixel(ang, resolution, 1.0))
     # create the final map
     mask = stomp.Map()
     mask.IngestMap(pix_vect)
     return mask
 
 
-def apply_mask(dtable):
-    smap = stomp.Map(map_file)
+def apply_mask(RA, DEC, map_path):
+    """
+    Adapt a STOMP pixel mask from a vector of right ascensions and declinations
+    at a given mask resolution. Creates new pixel for each position until
+    all objects are covered.
+
+    Parameters
+    ----------
+    RA : array_like
+        List of right ascensions in degrees.
+    DEC : array_like
+        List of declinations in degrees.
+    map_path : string
+        Stomp map file path to load from. The map cannot be parsed as object
+        because objects wrapped with SWIG cannot be pickled, however this
+        function must support multiprocessing.
+
+    Returns
+    -------
+    mask : array_like of bools
+        Boolean mask indicated whether an input object lies within the mask
+        footprint.
+    """
+    assert(len(RA) == len(DEC))
+    smap = stomp.Map(map_path)
     # check if objects fall within the mask
-    mask = np.empty(len(dtable), dtype="bool")
-    for i, data in enumerate(dtable):
+    mask = np.empty(len(RA), dtype="bool")
+    iterator = zip(
+        np.asarray(RA, dtype=np.double),
+        np.asarray(DEC, dtype=np.double))
+    for i, (ra, dec) in enumerate(iterator):
         new_obj = stomp.WeightedAngularCoordinate(
-            float(data[args.ra]), float(data[args.dec]),
-            1.0, stomp.AngularCoordinate.Equatorial)
+            ra, dec, 1.0, stomp.AngularCoordinate.Equatorial)
         mask[i] = smap.Contains(new_obj)
     return mask
 
 
 @contextmanager
 def stdout_redirected(dst=os.devnull):
+    """
+    Redirect all output from stdout temporarily to a file descriptor within the
+    context manager.
+
+    Parameters
+    ----------
+    dst : file descriptor
+        File descriptor to which stdout is redirected (defaults to /dev/null).
+    """
 
     term = sys.stdout.fileno()
 
@@ -149,6 +201,34 @@ def stdout_redirected(dst=os.devnull):
         sys.stdout.close()
         os.dup2(dst.fileno(), term)  # redirects non-python output
         sys.stdout = os.fdopen(term, 'w')  # keep python on stdout
+
+    with os.fdopen(os.dup(term), 'w') as term_restore:
+        with open(dst, 'w') as file:
+            redirect(file)
+        try:
+            yield
+        finally:  # restore
+            redirect(term_restore)
+
+
+@contextmanager
+def stderr_redirected(dst=os.devnull):
+    """
+    Redirect all output from stderr temporarily to a file descriptor within the
+    context manager.
+
+    Parameters
+    ----------
+    dst : file descriptor
+        File descriptor to which stderr is redirected (defaults to /dev/null).
+    """
+
+    term = sys.stderr.fileno()
+
+    def redirect(dst):
+        sys.stderr.close()
+        os.dup2(dst.fileno(), term)  # redirects non-python output
+        sys.stderr = os.fdopen(term, 'w')  # keep python on stderr
 
     with os.fdopen(os.dup(term), 'w') as term_restore:
         with open(dst, 'w') as file:
