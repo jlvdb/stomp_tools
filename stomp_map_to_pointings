@@ -108,5 +108,5 @@ if __name__ == "__main__":
         "remainding uncoverd survey area: %.6f deg^2" %
         stomp_map.Area())
     mappath = os.path.join(args.output, "remainder.map")
-    print("write remainder map to: %s" % mappath)
+    print("writing remainder map to: %s" % mappath)
     stomp_map.Write(mappath)

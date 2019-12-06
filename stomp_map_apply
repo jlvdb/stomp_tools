@@ -53,11 +53,11 @@ if __name__ == "__main__":
     # apply_mask() by each thread
     if not os.path.exists(args.stomp_map):
         sys.exit("ERROR: input STOMP map not found: " + args.stomp_map)
-    print("load STOMP map: %s" % args.stomp_map)
+    print("loading STOMP map: %s" % args.stomp_map)
 
     # for each thread load an instance of the STOMP map and a data chunk
     # STOMP masks cannot be pickled therefore not be shared between threads
-    message = "mask data to map footprint"
+    message = "masking data to map footprint"
     if args.threads == 1:  # don't use multiprocessing in this case
         print(message)
         mask = apply_mask(table[args.ra], table[args.dec], args.stomp_map)
@@ -78,5 +78,5 @@ if __name__ == "__main__":
     table_masked = table[mask]
 
     # write to specified output path
-    print("write table to: %s" % args.output)
+    print("writing table to: %s" % args.output)
     table_masked.write(args.output, format=args.o_format, overwrite=True)
