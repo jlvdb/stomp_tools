@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+import argparse
+import multiprocessing
+import os
+import sys
+from multiprocessing import cpu_count
+
+import numpy as np
+import stomp
+
+from table_tools import load_table
+from tools import apply_mask
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        description='Mask a data table to geometry defined by a STOMP pixel '
+                    'mask. The operation can be accelerated by using threads.')
+    parser.add_argument(
+        '-i', '--input', required=True, help='file path of input data table')
+    parser.add_argument(
+        '--i-format', default='fits',
+        help='astropy.table format specifier of the input table')
+    parser.add_argument(
+        '-s', '--stomp-map', required=True,
+        help='file path to stomp map that the defines the geometry')
+    parser.add_argument(
+        '--ra', required=True,
+        help='name of the FITS column containing the RA')
+    parser.add_argument(
+        '--dec', required=True,
+        help='name of the FITS column containing the DEC')
+    parser.add_argument(
+        '-o', '--output', required=True,
+        help='file path of masked output data table')
+    parser.add_argument(
+        '--o-format', default='fits',
+        help='astropy.table format specifier of the output table '
+             '(default: %(default)s)')
+    parser.add_argument(
+        '--threads', type=int, default=cpu_count(),
+        help='number of threads to use (default: %(default)s)')
+    args = parser.parse_args()
+
+    # normalize the number of threads
+    setattr(args, "threads", min(max(args.threads, 1), cpu_count()))
+
+    # load and check the input data table
+    table = load_table(args.input, args.i_format, [args.ra, args.dec])
+
+    # check if the input stomp map exists, the file is actually loaded in
+    # apply_mask() by each thread
+    if not os.path.exists(args.stomp_map):
+        sys.exit("ERROR: input STOMP map not found: " + args.stomp_map)
+    print("loading STOMP map: %s" % args.stomp_map)
+
+    # for each thread load an instance of the STOMP map and a data chunk
+    # STOMP masks cannot be pickled therefore not be shared between threads
+    message = "masking data to map footprint"
+    if args.threads == 1:  # don't use multiprocessing in this case
+        print(message)
+        mask = apply_mask(table[args.ra], table[args.dec], args.stomp_map)
+    else:  # use a multiprocessing pool for the masking
+        print(message + " using %d threads" % args.threads)
+        # split the table into roughly equal chunks
+        ra_slices = np.array_split(table[args.ra], args.threads)
+        dec_slices = np.array_split(table[args.dec], args.threads)
+        map_paths = [args.stomp_map] * args.threads
+        # create a parallel pool
+        with multiprocessing.Pool(args.threads) as pool:
+            mask_chunks = pool.starmap(
+                apply_mask, zip(ra_slices, dec_slices, map_paths))
+        mask = np.concatenate(mask_chunks)  # join the masks
+
+    print("kept: %i of %i" % (np.count_nonzero(mask), len(table)))
+    # remove masked objects
+    table_masked = table[mask]
+
+    # write to specified output path
+    print("writing table to: %s" % args.output)
+    table_masked.write(args.output, format=args.o_format, overwrite=True)

@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+import argparse
+import multiprocessing
+import os
+import shutil
+from multiprocessing import cpu_count
+
+import numpy as np
+
+from table_tools import (
+    load_table,
+    pointings_multi_matches, pointings_no_matches, pointings_write_tables)
+from tools import apply_mask
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        description='Split a survey data sample into pointing samples '
+                    'defined by a set of STOMP maps.')
+    parser.add_argument(
+        '-i', '--input', required=True, help='file path of input data table')
+    parser.add_argument(
+        '--i-format', default='fits',
+        help='astropy.table format specifier of input table')
+    parser.add_argument(
+        '-p', '--pointings-folder', required=True,
+        help='folder that contains a set of pointing STOMP maps (e.g. '
+             'produced with stomp_map_to_pointings, ending on .map)')
+    parser.add_argument(
+        '--ra', required=True,
+        help='name of the FITS column containing the RA')
+    parser.add_argument(
+        '--dec', required=True,
+        help='name of the FITS column containing the DEC')
+    parser.add_argument(
+        '--object-limit', type=int, default=1,
+        help='minimum number of objects a pointing must contain in order to '
+             'not be discarded')
+    parser.add_argument(
+        '-o', '--output', required=True,
+        help='folder where the pointing data tables are stored '
+             '(WARNING: existing contents will be erased!)')
+    parser.add_argument(
+        '--o-format', default='fits',
+        help='astropy.table format specifier of the output table '
+             '(default: %(default)s)')
+    parser.add_argument(
+        '--threads', type=int, default=cpu_count(),
+        help='number of threads to use (default: %(default)s)')
+    args = parser.parse_args()
+
+    # normalize the number of threads
+    setattr(args, "threads", min(max(args.threads, 1), cpu_count()))
+
+    # create output folder
+    if os.path.exists(args.output):
+        shutil.rmtree(args.output)
+    os.mkdir(args.output)
+
+    # load and check the input data table
+    table = load_table(args.input, args.i_format, [args.ra, args.dec])
+
+    # make a list of poining STOMP maps to use, the files are actually loaded
+    # in apply_mask() by each thread
+    print("collecting pointing maps from: %s" % args.pointings_folder)
+    stomp_maps = {}
+    for path in os.listdir(args.pointings_folder):
+        if path == "remainder.map":
+            continue
+        elif path.endswith(".map"):
+            pointing_name = os.path.splitext(path)[0]
+            stomp_maps[pointing_name] = os.path.join(
+                args.pointings_folder, path)
+    print("found %d maps" % len(stomp_maps))
+
+    # collect the RA/DEC data and create boolean masks assigning objects to a
+    # pointing
+    ra_data = table[args.ra]
+    dec_data = table[args.dec]
+    pointing_names = sorted(stomp_maps.keys())  # must keep these in order
+    message = "splitting data into pointings"
+    if args.threads == 1:  # don't use multiprocessing in this case
+        print(message)
+        pointing_mask_list = []
+        for pname in pointing_names:
+            pointing_mask_list.append(
+                apply_mask(ra_data, dec_data, stomp_maps[pname]))
+    else:  # use a multiprocessing pool for the masking
+        print(message + " using %d threads" % args.threads)
+        ra_data_list = [ra_data] * len(stomp_maps)
+        dec_data_list = [dec_data] * len(stomp_maps)
+        map_paths = [stomp_maps[pname] for pname in pointing_names]
+        with multiprocessing.Pool(args.threads) as pool:
+            pointing_mask_list = pool.starmap(
+                apply_mask, zip(ra_data_list, dec_data_list, map_paths))
+    # stack the boolean masks
+    pointing_masks = np.empty(
+        (len(pointing_mask_list), len(table)), dtype="bool")
+    for i, mask in enumerate(pointing_mask_list):
+        pointing_masks[i] = mask
+
+    # compute global mask and check if object have multiple matches
+    pointings_multi_matches(table, pointing_masks, args.output, args.o_format)
+    # report the remainder that was not covered by any of the pointings
+    pointings_no_matches(table, pointing_masks, args.output, args.o_format)
+    # write the remaining data tables if they are not empty
+    pointings_write_tables(
+        table, pointing_masks, pointing_names, args.output, args.o_format,
+        args.object_limit)

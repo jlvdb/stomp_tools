@@ -19,11 +19,11 @@ if __name__ == "__main__":
         raise OSError("Input file not found: " + map_path)
 
     # get the map area
-    if args.v:
-        print("load STOMP map: %s" % map_file)
+    if args.verbose:
+        print("load STOMP map: %s" % map_path)
     stomp_map = stomp.Map(map_path)
     area = stomp_map.Area()
-    if args.v:
+    if args.verbose:
         print("Map area: %f sqdeg" % area)
     else:
         print("%f" % area)
