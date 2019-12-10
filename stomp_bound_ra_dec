@@ -34,8 +34,9 @@ if __name__ == "__main__":
             "resolution must be a power of base 2 between 2 and 32768")
 
     # create tile map
-    print("create bounds with RA: %f-%f and DEC: %f-%f at resolution %d " % (
-        RAmin, RAmax, DECmin, DECmax, args.resolution))
+    print(
+        ("mask data to bounds with RA: %011.7f-%011.7f " % (RAmin, RAmax)) +
+        ("and DEC: %0+11.7f-%0+11.7f " % (DECmin, DECmax)))
     tile_corners = stomp.LatLonBound(  # STOMP has RA and DEC reversed
         DECmin, DECmax, RAmin, RAmax, stomp.AngularCoordinate.Equatorial)
     tile_map = stomp.Map(tile_corners, 1.0, args.resolution, True)
