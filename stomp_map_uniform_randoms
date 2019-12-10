@@ -9,7 +9,7 @@ import pandas as pd
 import stomp
 from astropy.table import Table
 
-from tools import generate_randoms
+from stomp_tools import generate_randoms
 
 
 if __name__ == "__main__":

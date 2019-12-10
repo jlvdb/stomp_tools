@@ -9,7 +9,7 @@ import numpy as np
 import stomp
 
 from table_tools import load_table
-from tools import apply_mask
+from stomp_tools import apply_mask
 
 
 if __name__ == "__main__":

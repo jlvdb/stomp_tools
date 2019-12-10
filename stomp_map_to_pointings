@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import stomp
 
-from tools import stdout_redirected
+from stomp_tools import stdout_redirected
 
 
 if __name__ == "__main__":

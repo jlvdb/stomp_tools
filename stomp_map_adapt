@@ -10,7 +10,7 @@ import numpy as np
 import stomp
 from astropy.table import Table
 
-from tools import adapt_mask
+from stomp_tools import adapt_mask
 
 
 if __name__ == "__main__":
