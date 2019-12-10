@@ -8,6 +8,7 @@ import numpy as np
 import stomp
 
 from stomp_tools import stdout_redirected
+from table_tools import read_pointing_file
 
 
 if __name__ == "__main__":
@@ -42,23 +43,7 @@ if __name__ == "__main__":
     os.mkdir(args.output)
 
     # read the pointing defining file
-    print("loading pointing file: %s" % args.pointings_file)
-    pointings = []
-    with open(args.pointings_file) as f:
-        for n, rawline in enumerate(f, 1):
-            if len(rawline.strip()) == 0:
-                continue
-            try:
-                # get the RA-DEC bounds
-                line = rawline.strip()
-                pname, ra_decs = line.split(None, 1)
-                RAmin, RAmax, DECmin, DECmax = [
-                    float(s) for s in ra_decs.split()]
-                pointings.append((pname, RAmin, RAmax, DECmin, DECmax))
-            except (ValueError, IndexError):
-                sys.exit(
-                    ("ERROR: invalid format in line %d, " % n) +
-                    "expected: name, RAmin, RAmax, DECmin, DECmax")
+    pointings = read_pointing_file(args.pointings_file)
     # load the master stomp map
     print("loading STOMP map: %s" % args.input)
     stomp_map = stomp.Map(args.input)
