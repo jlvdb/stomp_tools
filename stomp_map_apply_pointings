@@ -38,6 +38,10 @@ if __name__ == "__main__":
         help='minimum number of objects a pointing must contain in order to '
              'not be discarded')
     parser.add_argument(
+        '--remainder', action='store_true',
+        help='whether to write a table with objects that do not match any '
+             'pointing')
+    parser.add_argument(
         '-o', '--output', required=True,
         help='folder where the pointing data tables are stored '
              '(WARNING: existing contents will be erased!)')
@@ -103,7 +107,8 @@ if __name__ == "__main__":
     # compute global mask and check if object have multiple matches
     pointings_multi_matches(table, pointing_masks, args.output, args.o_format)
     # report the remainder that was not covered by any of the pointings
-    pointings_no_matches(table, pointing_masks, args.output, args.o_format)
+    pointings_no_matches(
+        table, pointing_masks, args.output, args.o_format, args.remainder)
     # write the remaining data tables if they are not empty
     pointings_write_tables(
         table, pointing_masks, pointing_names, args.output, args.o_format,
