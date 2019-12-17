@@ -52,6 +52,7 @@ if __name__ == "__main__":
     # the master stomp_map
     print("iterating pointings, writing pointing maps to: %s" % args.output)
     pointing_maps = {}
+    n_reject = 0
     for n, pointing in enumerate(pointings, 1):
         pname, RAmin, RAmax, DECmin, DECmax = pointing
         with stdout_redirected():
@@ -67,7 +68,7 @@ if __name__ == "__main__":
         # test whether the pointing overlaps with the stomp map
         is_overlapping = pointing_map.IntersectMap(stomp_map)
         if not is_overlapping:
-            print("WARNING: pointing %s rejected: no spatial overlap" % pname)
+            n_reject += 1
             continue
         # check whether the overlap area is large enough
         overlap_area = pointing_map.Area()
@@ -89,6 +90,9 @@ if __name__ == "__main__":
         stomp_map.ExcludeMap(pointing_map)
 
     # report the remainder that was not covered by any of the pointings
+    print(
+        "WARNING: %d pointings do not overlap with the survey footprint" %
+        n_reject)
     print(
         "remainding uncoverd survey area: %.6f deg^2" %
         stomp_map.Area())
