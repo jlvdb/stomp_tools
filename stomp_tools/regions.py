@@ -31,7 +31,7 @@ def measure_region_area(mask_path, n_regions, region_idx):
     return area
 
 
-def regionize_data(mask_path, n_regions, data):
+def regionize_data(mask_path, n_regions, RA, DEC):
     """
     Assign data objects to the regions of a given STOMP mask based on their
     right ascension / declination.
@@ -42,9 +42,10 @@ def regionize_data(mask_path, n_regions, data):
         File path of STOMP mask.
     n_regions : int
         Number of STOMP mask regions.
-    data : array_like or pandas.DataFrame
-        Must of array of shape (Nx2) with N entries of type (RA, DEC) or a
-        pandas DataFrame with columns RA and DEC, angles given in degrees.
+    RA : array_like
+        Right ascension in degrees.
+    DEC : array_like
+        Declination in degrees.
 
     Returns
     -------
@@ -53,11 +54,6 @@ def regionize_data(mask_path, n_regions, data):
         membership of the objects. If index == -1, the object falls outside the
         mask footprint.
     """
-    try:  # if data is a pandas.DataFrame
-        RA = data.RA
-        DEC = data.DEC
-    except AttributeError:  # if data is a Nx2 np.ndarray
-        RA, DEC = data.T
     # load mask
     stomp_mask = stomp.Map(mask_path)
     stomp_mask.InitializeRegions(n_regions)

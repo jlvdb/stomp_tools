@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+import argparse
+import multiprocessing
+import os
+import sys
+from multiprocessing import cpu_count
+
+import numpy as np
+import stomp
+
+from table_tools import load_table
+from stomp_tools import regionize_data
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        description='Run a data table through a STOMP pixel mask with defined '
+                    'spatial regions and append a new column to the table '
+                    'with the index of the matching region.')
+    parser.add_argument(
+        '-i', '--input', required=True, help='file path of input data table')
+    parser.add_argument(
+        '--i-format', default='fits',
+        help='astropy.table format specifier of the input table')
+    parser.add_argument(
+        '-s', '--stomp-map', required=True,
+        help='file path to stomp map that the defines the geometry')
+    parser.add_argument(
+        '--ra', required=True,
+        help='name of the FITS column containing the RA')
+    parser.add_argument(
+        '--dec', required=True,
+        help='name of the FITS column containing the DEC')
+    parser.add_argument(
+        '--n-regions', required=True, type=int,
+        help='number of spatial regions to create over the STOMP map')
+    parser.add_argument(
+        '--region-idx', default='region_idx',
+        help='name of the FITS column appended to the table containing the '
+             'region indices (default: %(default)s))')
+    parser.add_argument(
+        '--mask', action='store_true',
+        help='mask the data to the mask footprint by filtering out objects '
+             'with region index < 0')
+    parser.add_argument(
+        '-o', '--output',
+        help='file path of masked output data table (default: in place)')
+    parser.add_argument(
+        '--o-format', default='fits',
+        help='astropy.table format specifier of the output table '
+             '(default: %(default)s)')
+    parser.add_argument(
+        '--threads', type=int, default=cpu_count(),
+        help='number of threads to use (default: %(default)s)')
+    args = parser.parse_args()
+
+    # normalize the number of threads
+    setattr(args, "threads", min(max(args.threads, 1), cpu_count()))
+
+    # load and check the input data table
+    table = load_table(args.input, args.i_format, [args.ra, args.dec])
+
+    # check if the input stomp map exists, the file is actually loaded in
+    # apply_mask() by each thread
+    if not os.path.exists(args.stomp_map):
+        sys.exit("ERROR: input STOMP map not found: " + args.stomp_map)
+    print("loading STOMP map: %s" % args.stomp_map)
+    print("initializing %d spatial regions" % args.n_regions)
+
+    # for each thread load an instance of the STOMP map and a data chunk
+    # STOMP masks cannot be pickled therefore not be shared between threads
+    message = "determining region indices"
+    if args.threads == 1:  # don't use multiprocessing in this case
+        print(message)
+        region_idx = regionize_data(
+            args.stomp_map, args.n_regions,
+            table[args.ra], table[args.dec])
+    else:  # use a multiprocessing pool for the masking
+        print(message + " using %d threads" % args.threads)
+        # split the table into roughly equal chunks
+        map_paths = [args.stomp_map] * args.threads
+        n_regions = [args.n_regions] * args.threads
+        ra_slices = np.array_split(table[args.ra], args.threads)
+        dec_slices = np.array_split(table[args.dec], args.threads)
+        # create a parallel pool
+        with multiprocessing.Pool(args.threads) as pool:
+            region_idx_chunks = pool.starmap(
+                regionize_data, zip(
+                    map_paths, n_regions, ra_slices, dec_slices))
+        region_idx = np.concatenate(region_idx_chunks)  # join the indices
+
+    table[args.region_idx] = region_idx
+    # reject objects with negative region indices (outside of mask)
+    if args.mask:
+        table = table[table[args.region_idx] >= 0]
+        print("kept: %i of %i objects" % (len(table), len(region_idx)))
+    else:
+        print("unmatched:  %8d objects" % np.count_nonzero(region_idx < 0))
+    # remove masked objects
+    counts = np.unique(table[args.region_idx], return_counts=True)
+    for reg_idx, counts in zip(*counts):
+        if reg_idx >= 0:
+            print("region %3d: %8d objects" % (reg_idx, counts))
+
+    # write to specified output path
+    if args.output is None:
+        setattr(args, "output", args.input)
+    print("writing table to: %s" % args.output)
+    table.write(args.output, format=args.o_format, overwrite=True)
