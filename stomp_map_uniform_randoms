@@ -2,6 +2,7 @@
 import argparse
 import multiprocessing
 import os
+from hashlib import md5
 from multiprocessing import cpu_count
 
 import numpy as np
@@ -46,6 +47,9 @@ if __name__ == "__main__":
         help='astropy.table format specifier of the output table '
              '(default: %(default)s)')
     parser.add_argument(
+        '--seed', default='KV450',
+        help='string to seed the random generator (default: %(default)s)')
+    parser.add_argument(
         '--threads', type=int, default=cpu_count(),
         help='number of threads to use (default: %(default)s)')
     args = parser.parse_args()
@@ -73,19 +77,27 @@ if __name__ == "__main__":
             for col in args.clone_column:
                 clonedata.append(d[col])
 
+    # seed for the random state -> reproducible results
+    hasher = md5(bytes(args.seed, "utf-8"))
+    hashval = bytes(hasher.hexdigest(), "utf-8")
+    seed = np.frombuffer(hashval, dtype=np.uint32)
+
     # for each thread load an instance of the STOMP map and a data chunk
     # STOMP masks cannot be pickled therefore not be shared between threads
     message = "generating %d randoms on map footprint" % args.n
     if args.threads == 1:
         print(message)
-        pandas_table = generate_randoms(map_path, args.n)
+        pandas_table = generate_randoms(map_path, args.n, seed)
     else:  # use a multiprocessing pool for the random generation
         print(message + " using %d threads" % args.threads)
         # split the number of randoms to generate into roughly equal chunks
         randoms_per_thread = np.diff(
             np.linspace(0, args.n, args.threads + 1, dtype=int))
         # launch a multiprocessing pool
-        thread_args = [[map_path] * args.threads, randoms_per_thread]
+        thread_args = [
+            [map_path] * args.threads,
+            randoms_per_thread,
+            np.array([seed + i for i in range(args.threads)], dtype=np.uint32)]
         with multiprocessing.Pool(args.threads) as pool:
             tables = pool.starmap(generate_randoms, zip(*thread_args))
         # join the pandas.DataFrames
