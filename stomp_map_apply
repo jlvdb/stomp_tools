@@ -9,7 +9,7 @@ import numpy as np
 import stomp
 
 from table_tools import load_table
-from stomp_tools import apply_mask
+from stomp_tools import apply_mask, regionize_data
 
 
 if __name__ == "__main__":
@@ -31,6 +31,13 @@ if __name__ == "__main__":
     parser.add_argument(
         '--dec', required=True,
         help='name of the FITS column containing the DEC')
+    parser.add_argument(
+        '--n-regions', type=int,
+        help='number of regions to break the STOMP map into')
+    parser.add_argument(
+        '--region-idx',
+        help='name of the FITS column writing a region index to (if '
+             '--n-regions is used)')
     parser.add_argument(
         '-o', '--output', required=True,
         help='file path of masked output data table')
@@ -60,7 +67,12 @@ if __name__ == "__main__":
     message = "masking data to map footprint"
     if args.threads == 1:  # don't use multiprocessing in this case
         print(message)
-        mask = apply_mask(table[args.ra], table[args.dec], args.stomp_map)
+        if args.n_regions is None:
+            mask = apply_mask(table[args.ra], table[args.dec], args.stomp_map)
+        else:
+            region_idx = regionize_data(
+                args.stomp_map, args.n_regions,
+                table[args.ra], table[args.dec])
     else:  # use a multiprocessing pool for the masking
         print(message + " using %d threads" % args.threads)
         # split the table into roughly equal chunks
@@ -69,10 +81,21 @@ if __name__ == "__main__":
         map_paths = [args.stomp_map] * args.threads
         # create a parallel pool
         with multiprocessing.Pool(args.threads) as pool:
-            mask_chunks = pool.starmap(
-                apply_mask, zip(ra_slices, dec_slices, map_paths))
-        mask = np.concatenate(mask_chunks)  # join the masks
+            if args.n_regions is None:
+                mask_chunks = pool.starmap(
+                    apply_mask, zip(ra_slices, dec_slices, map_paths))
+                mask = np.concatenate(mask_chunks)  # join the masks
+            else:
+                region_idx_chunks = pool.starmap(
+                    regionize_data, zip(
+                        map_paths, [args.n_regions] * args.threads,
+                        ra_slices, dec_slices))
+                region_idx = np.concatenate(region_idx_chunks)
 
+    if args.n_regions is not None:
+        mask = region_idx >= 0
+        # add region index column
+        table[args.region_idx] = region_idx
     print("kept: %i of %i" % (np.count_nonzero(mask), len(table)))
     # remove masked objects
     table_masked = table[mask]
