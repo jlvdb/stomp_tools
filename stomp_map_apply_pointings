@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
     # create output folder
     if os.path.exists(args.output):
-        shutil.rmtree(args.output)
+        raise OSError("output folder exists: %s" % args.output)
     os.mkdir(args.output)
 
     # load and check the input data table
