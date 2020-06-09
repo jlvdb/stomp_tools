@@ -67,7 +67,7 @@ if __name__ == "__main__":
     # check if the cloning table exists
     if args.n_from_table is not None:
         if not os.path.exists(args.n_from_table):
-            raise OSError("Input file not found: " + map_path)
+            raise OSError("Input file not found: " + args.n_from_table)
         d = Table.read(args.n_from_table)
         N = len(d)
         # draw n = factor * len(table) objects
