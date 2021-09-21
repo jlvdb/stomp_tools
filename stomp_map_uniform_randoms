@@ -5,10 +5,10 @@ import os
 from hashlib import md5
 from multiprocessing import cpu_count
 
+import astropandas as apd
 import numpy as np
 import pandas as pd
 import stomp
-from astropy.table import Table
 
 from stomp_tools import generate_randoms
 
@@ -68,15 +68,12 @@ if __name__ == "__main__":
     if args.n_from_table is not None:
         if not os.path.exists(args.n_from_table):
             raise OSError("Input file not found: " + args.n_from_table)
-        d = Table.read(args.n_from_table)
+        d = apd.read_auto(args.n_from_table)
         N = len(d)
         # draw n = factor * len(table) objects
         setattr(args, "n", int(N * args.factor))
         # collect the properties needed for cloning
-        if args.clone_column is not None:
-            clonedata = []
-            for col in args.clone_column:
-                clonedata.append(d[col])
+        clonedata = d[args.clone_column]
 
     # seed for the random state -> reproducible results
     hasher = md5(bytes(args.seed, "utf-8"))
@@ -108,10 +105,9 @@ if __name__ == "__main__":
     if clonedata is not None:
         np.random.seed(seed)
         idx_draw = np.random.choice(np.arange(N), args.n, replace=True)
-        for col, data in zip(args.clone_column, clonedata):
-            pandas_table[col] = data[idx_draw]
+        for col in clonedata.columns:
+            pandas_table[col] = clonedata[idx_draw]
 
     # write to specified output path
     print("write table to: %s" % args.output)
-    table = Table.from_pandas(pandas_table)  # convert to astropy.table.Table
-    table.write(args.output, format=args.o_format, overwrite=True)
+    apd.to_auto(args.output)
