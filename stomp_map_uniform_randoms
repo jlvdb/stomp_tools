@@ -108,4 +108,4 @@ if __name__ == "__main__":
 
     # write to specified output path
     print("write table to: %s" % args.output)
-    apd.to_auto(args.output, ext="." + args.oformat)
+    apd.to_auto(args.output, ext="." + args.o_format)
