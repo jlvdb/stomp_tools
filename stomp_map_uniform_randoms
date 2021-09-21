@@ -83,7 +83,7 @@ if __name__ == "__main__":
     message = "generating %d randoms on map footprint" % args.n
     if args.threads == 1:
         print(message)
-        pandas_table = generate_randoms(map_path, args.n, int(seed[0]))
+        table = generate_randoms(map_path, args.n, int(seed[0]))
     else:  # use a multiprocessing pool for the random generation
         print(message + " using %d threads" % args.threads)
         # split the number of randoms to generate into roughly equal chunks
@@ -97,15 +97,15 @@ if __name__ == "__main__":
         with multiprocessing.Pool(args.threads) as pool:
             tables = pool.starmap(generate_randoms, zip(*thread_args))
         # join the pandas.DataFrames
-        pandas_table = pd.concat(tables)
+        table = pd.concat(tables)
 
     # optionally clone the values of the data column
     if clonedata is not None:
         np.random.seed(seed)
         idx_draw = np.random.choice(np.arange(N), args.n, replace=True)
         for col in clonedata.columns:
-            pandas_table[col] = clonedata[idx_draw]
+            table[col] = clonedata[idx_draw]
 
     # write to specified output path
     print("write table to: %s" % args.output)
-    apd.to_auto(args.output, ext="." + args.o_format)
+    apd.to_auto(table, args.output, ext="." + args.o_format)
