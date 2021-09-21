@@ -62,12 +62,14 @@ if __name__ == "__main__":
     # check input files
     if not os.path.exists(map_path):
         raise OSError("Input file not found: " + map_path)
+    print("selecting input map: {:}".format(map_path))
 
     clonedata = None
     # check if the cloning table exists
     if args.n_from_table is not None:
         if not os.path.exists(args.n_from_table):
             raise OSError("Input file not found: " + args.n_from_table)
+        print("loading data for cloning: {:}".format(args.n_from_table))
         d = apd.read_auto(args.n_from_table, cols=args.clone_column)
         N = len(d)
         # draw n = factor * len(table) objects
