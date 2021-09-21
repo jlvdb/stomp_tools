@@ -106,7 +106,7 @@ if __name__ == "__main__":
         np.random.seed(seed)
         idx_draw = np.random.choice(np.arange(N), args.n, replace=True)
         for col in clonedata.columns:
-            table[col] = clonedata[idx_draw]
+            table[col] = clonedata[col].iloc[idx_draw]
 
     # write to specified output path
     print("write table to: %s" % args.output)
