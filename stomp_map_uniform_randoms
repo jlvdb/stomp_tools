@@ -100,13 +100,15 @@ if __name__ == "__main__":
             tables = pool.starmap(generate_randoms, zip(*thread_args))
         # join the pandas.DataFrames
         table = pd.concat(tables)
+        table.reset_index(inplace=True, drop=True)
 
     # optionally clone the values of the data column
     if clonedata is not None:
-        np.random.seed(seed)
-        idx_draw = np.random.choice(np.arange(N), args.n, replace=True)
-        for col in clonedata.columns:
-            table[col] = clonedata[col].iloc[idx_draw]
+        clones = clonedata.sample(
+            n=len(table), replace=True,
+            random_state=np.random.RandomState(seed))
+        clones.reset_index(inplace=True, drop=True)
+        table = pd.concat([table.reset_index(), clones], axis=1)
 
     # write to specified output path
     print("write table to: %s" % args.output)
