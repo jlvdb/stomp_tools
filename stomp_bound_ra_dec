@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     # create tile map
     print(
-        ("mask data to bounds with RA: %011.7f-%011.7f " % (RAmin, RAmax)) +
+        ("define footprint bounds at RA: %011.7f-%011.7f " % (RAmin, RAmax)) +
         ("and DEC: %0+11.7f-%0+11.7f " % (DECmin, DECmax)))
     tile_corners = stomp.LatLonBound(  # STOMP has RA and DEC reversed
         DECmin, DECmax, RAmin, RAmax, stomp.AngularCoordinate.Equatorial)
