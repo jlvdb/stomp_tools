@@ -3,7 +3,8 @@ import pandas as pd
 import stomp
 
 
-def generate_randoms(mask_path, n_randoms, seed=None):
+def generate_randoms(
+        mask_path, n_randoms, seed=None, ra_name="RA", dec_name="DEC"):
     """
     Generate a sample of uniformly distributed objects on a STOMP mask.
 
@@ -15,6 +16,10 @@ def generate_randoms(mask_path, n_randoms, seed=None):
         Number of random points to generate.
     seed : uint32
         Seed for the random number generator.
+    ra_name : str
+        Name of the R.A. column.
+    dec_name : str
+        Name of the Dec. column.
 
     Returns
     -------
@@ -34,6 +39,6 @@ def generate_randoms(mask_path, n_randoms, seed=None):
     # convert to numpy array
     RA = np.asarray([rand.RA() for rand in random_vector.iterator()])
     DEC = np.asarray([rand.DEC() for rand in random_vector.iterator()])
-    randoms = pd.DataFrame({"RA": RA, "DEC": DEC})
+    randoms = pd.DataFrame({ra_name: RA, dec_name: DEC})
     del stomp_map, random_vector
     return randoms
