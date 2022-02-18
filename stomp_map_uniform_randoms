@@ -76,7 +76,7 @@ if __name__ == "__main__":
         if not os.path.exists(args.n_from_table):
             raise OSError("Input file not found: " + args.n_from_table)
         print("loading data for cloning: {:}".format(args.n_from_table))
-        clonedata = apd.read_auto(args.n_from_table, cols=args.clone_column)
+        clonedata = apd.read_auto(args.n_from_table, columns=args.clone_column)
         N = len(clonedata)
         # draw n = factor * len(table) objects
         setattr(args, "n", int(N * args.factor))
