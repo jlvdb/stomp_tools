@@ -1,0 +1,7 @@
+numpy
+pandas
+astropy
+svgwrite
+astropandas @ git+https://github.com/jlvdb/astropandas.git
+table_tools @ git+https://github.com/jlvdb/table_tools.git
+stomp @ git+https://github.com/jlvdb/stomp.git
