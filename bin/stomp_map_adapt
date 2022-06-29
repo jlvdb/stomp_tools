@@ -6,9 +6,9 @@ import subprocess
 import sys
 from multiprocessing import cpu_count
 
+import astropandas as apd
 import numpy as np
 import stomp
-from astropy.table import Table
 
 from stomp_tools import adapt_mask
 
@@ -20,9 +20,6 @@ if __name__ == "__main__":
                     'the_wizz/utility_programs/stomp_adapt_map.py')
     parser.add_argument(
         '-i', '--input', required=True, help='file path of input data table')
-    parser.add_argument(
-        '--i-format', default='fits',
-        help='astropy.table format specifier of table 2')
     parser.add_argument(
         '--ra', default='ALPHA_J2000',
         help='name of the table column containing the right ascension '
@@ -42,11 +39,11 @@ if __name__ == "__main__":
     # load the input data
     if not os.path.exists(args.input):
         sys.exit("ERROR: data table does not exist: %s" % args.input)
-    data = Table.read(args.input, format=args.i_format)
+    data = apd.read_auto(args.input)
     # check if the RA/DEC columns exist
-    if args.ra not in data.colnames:
+    if args.ra not in data.columns:
         sys.exit("ERROR: table does not contain column '%s'" % args.ra)
-    if args.dec not in data.colnames:
+    if args.dec not in data.columns:
         sys.exit("ERROR: table does not contain column '%s'" % args.dec)
 
     ra_min = data[args.ra].min()

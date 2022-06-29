@@ -1,6 +1,5 @@
 numpy
 pandas
-astropy
 svgwrite
 astropandas
 table_tools @ git+https://github.com/jlvdb/table_tools.git
